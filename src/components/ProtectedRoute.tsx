@@ -4,7 +4,7 @@ import { Spinner } from "./ui/spinner";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: "citizen" | "admin";
+  requiredRole?: "citizen" | "admin" | "collector";
 }
 
 export const ProtectedRoute = ({

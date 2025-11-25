@@ -1,120 +1,155 @@
-import { authAPI } from "@/services/api";
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+"use client"
+
+import { authAPI, tokenErrorEmitter } from "@/services/api"
+import { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from "react"
 
 interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "citizen" | "admin";
-  phone?: string;
-  address?: string;
+  id: string
+  name: string
+  email: string
+  role: "citizen" | "admin" | "collector"
+  phone?: string
+  address?: string
 }
 
 interface AuthContextType {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (email: string, password: string, role: "citizen" | "admin") => Promise<boolean>;
+  user: User | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  login: (email: string, password: string, role: "citizen" | "admin" | "collector") => Promise<boolean>
   register: (userData: {
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-    password: string;
-    role: "citizen" | "admin";
-  }) => Promise<boolean>;
-  logout: () => void;
-  refreshUser: () => Promise<void>;
+    name: string
+    email: string
+    phone: string
+    address: string
+    password: string
+    role: "citizen" | "admin"
+  }) => Promise<boolean>
+  logout: () => void
+  refreshUser: () => Promise<void>
+  error: string | null
+  clearError: () => void
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Check if user is already logged in on mount
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem("authToken");
+      const token = localStorage.getItem("authToken")
       if (token) {
-        await refreshUser();
+        await refreshUser()
       }
-      setIsLoading(false);
-    };
-    checkAuth();
-  }, []);
-
-  const login = async (
-    email: string,
-    password: string,
-    role: "citizen" | "admin"
-  ) => {
-    try {
-      const response = await authAPI.login(email, password, role);
-      if (response.success && response.data) {
-        const { token, user: userData } = response.data as {
-          token: string;
-          user: User;
-        };
-        localStorage.setItem("authToken", token);
-        localStorage.setItem("user", JSON.stringify(userData));
-        setUser(userData);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("[v0] Login error", error);
-      return false;
+      setIsLoading(false)
     }
-  };
+    checkAuth()
+  }, [])
 
-  const register = async (userData: {
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-    password: string;
-    role: "citizen" | "admin";
-  }) => {
-    try {
-      const response = await authAPI.register(userData);
-      if (response.success && response.data) {
-        const { token, user: newUser } = response.data as {
-          token: string;
-          user: User;
-        };
-        localStorage.setItem("authToken", token);
-        localStorage.setItem("user", JSON.stringify(newUser));
-        setUser(newUser);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("[v0] Register error", error);
-      return false;
+  useEffect(() => {
+    const handleTokenExpiry = () => {
+      logout()
+      setError("Your session has expired. Please login again.")
     }
-  };
 
-  const logout = () => {
-    authAPI.logout();
-    setUser(null);
-  };
+    tokenErrorEmitter.addEventListener("tokenExpired", handleTokenExpiry as EventListener)
+    return () => {
+      tokenErrorEmitter.removeEventListener("tokenExpired", handleTokenExpiry as EventListener)
+    }
+  }, [])
 
-  const refreshUser = async () => {
+  const login = useCallback(
+    async (email: string, password: string, role: "citizen" | "admin" | "collector"): Promise<boolean> => {
+      setError(null)
+      try {
+        const response = await authAPI.login(email, password)
+        if (response.success && response.data) {
+          const { token, user: userData } = response.data as {
+            token: string
+            user: User
+          }
+          localStorage.setItem("authToken", token)
+          localStorage.setItem("user", JSON.stringify(userData))
+          setUser(userData)
+          return true
+        }
+        setError(response.error || "Login failed")
+        return false
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Login failed"
+        setError(message)
+        console.error("[v0] Login error", err)
+        return false
+      }
+    },
+    [],
+  )
+
+  const register = useCallback(
+    async (userData: {
+      name: string
+      email: string
+      phone: string
+      address: string
+      password: string
+      role: "citizen" | "admin"
+    }): Promise<boolean> => {
+      setError(null)
+      try {
+        const response = await authAPI.register(userData)
+        if (response.success && response.data) {
+          const { token, user: newUser } = response.data as {
+            token: string
+            user: User
+          }
+          localStorage.setItem("authToken", token)
+          localStorage.setItem("user", JSON.stringify(newUser))
+          setUser(newUser)
+          return true
+        }
+        setError(response.error || "Registration failed")
+        return false
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Registration failed"
+        setError(message)
+        console.error("[v0] Register error", err)
+        return false
+      }
+    },
+    [],
+  )
+
+  const logout = useCallback(() => {
+    authAPI.logout()
+    setUser(null)
+    setError(null)
+  }, [])
+
+  const refreshUser = useCallback(async () => {
     try {
-      const response = await authAPI.getCurrentUser();
+      const response = await authAPI.getCurrentUser()
       if (response.success && response.data) {
-        setUser(response.data as User);
-        localStorage.setItem("user", JSON.stringify(response.data));
+        setUser(response.data as User)
+        setError(null)
+        localStorage.setItem("user", JSON.stringify(response.data))
       } else {
-        logout();
+        logout()
+        setError("Failed to refresh user session")
       }
-    } catch (error) {
-      console.error("[v0] Refresh user error", error);
-      logout();
+    } catch (err) {
+      console.error("[v0] Refresh user error", err)
+      logout()
+      setError("Session refresh failed")
     }
-  };
+  }, [])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
 
   return (
     <AuthContext.Provider
@@ -126,17 +161,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         register,
         logout,
         refreshUser,
+        error,
+        clearError,
       }}
     >
       {children}
     </AuthContext.Provider>
-  );
-};
+  )
+}
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
+  const context = useContext(AuthContext)
   if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
+    throw new Error("useAuth must be used within AuthProvider")
   }
-  return context;
-};
+  return context
+}

@@ -33,7 +33,7 @@ router.post('/register', async (req, res) => {
 
     const token = jwt.sign(
       { id: user._id, role: user.role },
-      process.env.JWT_SECRET || "secret",
+      process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
 
@@ -75,7 +75,7 @@ router.post('/login', async (req, res) => {
 
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || "secret",
+      process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
 
@@ -127,7 +127,7 @@ router.get('/me', async (req, res) => {
     if (!authHeader) return res.status(401).json({ error: "No token provided" });
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await User.findById(decoded.id).select("-password");
 
